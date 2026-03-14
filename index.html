@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Ozon Multiverse: Music Edition</title>
+    <style>
+        body {
+            margin: 0; padding: 0; overflow: hidden;
+            background-color: #000; font-family: sans-serif;
+            touch-action: none; color: white;
+        }
+
+        /* ОБНОВЛЕННЫЙ ФОН МЕНЮ */
+        #main-menu {
+            position: absolute; width: 100%; height: 100%;
+            /* Установлена загруженная фотография 1000032537.jpg */
+            background: linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url('InShot_20260315_020539529.jpg');
+            background-size: cover; 
+            background-position: center;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center; z-index: 100;
+        }
+
+        .menu-card {
+            background: rgba(249, 17, 85, 0.3); border: 2px solid #f91155;
+            padding: 20px; margin: 10px; border-radius: 15px;
+            width: 280px; text-align: center; cursor: pointer;
+            transition: 0.3s; backdrop-filter: blur(8px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .menu-card:hover { transform: scale(1.05); background: rgba(249, 17, 85, 0.6); }
+
+        #ui {
+            position: absolute; top: 20px; left: 20px;
+            font-size: 18px; font-weight: bold; z-index: 10;
+            background: rgba(0, 0, 0, 0.7); padding: 15px;
+            border-radius: 20px; display: none; pointer-events: none;
+            border: 1px solid #f91155;
+        }
+
+        #game-over {
+            display: none; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.95);
+            padding: 40px; text-align: center; border-radius: 20px;
+            border: 5px solid #f91155; z-index: 110;
+        }
+
+        button {
+            background: #f91155; color: white; border: none;
+            padding: 15px 30px; font-size: 18px; border-radius: 10px;
+            cursor: pointer; font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div id="main-menu">
+    <h1 style="color: #f91155; text-shadow: 2px 2px 10px #000; font-size: 42px; margin-bottom: 30px;">OTEC ARCADE</h1>
+    <div class="menu-card" onclick="startGame('runner')">
+        <h3>Перекус на работе</h3>
+        <p>кушай и не нарвись на врага</p>
+        <small>Рекорд: <span id="record-runner">0</span></small>
+    </div>
+    <div class="menu-card" onclick="startGame('space')">
+        <h3>Космический ужин</h3>
+        <p>покушай и покури в космосе</p>
+        <small>Рекорд: <span id="record-space">0</span></small>
+    </div>
+</div>
+
+<div id="ui">
+    ОЧКИ: <span id="score" style="color: #FFD700;">0</span> | 
+    ❤️: <span id="lives" style="color: #f91155;">4</span>
+</div>
+
+<div id="game-over">
+    <h1 id="status-title" style="color: #f91155;">КОНЕЦ ИГРЫ</h1>
+    <p>Твой результат: <span id="final-score">0</span></p>
+    <button onclick="location.reload()">В МЕНЮ</button>
+</div>
+
+<audio id="musicRunner" loop>
+    <source src="Mayhem — Night Music (8-bit) (www.lightaudio.ru).mp3" type="audio/mpeg">
+</audio>
+<audio id="musicSpace" loop>
+    <source src="8 БИТНАЯ МУЗЫКА — ПРИКОЛЬНАЯ (www.lightaudio.ru).mp3" type="audio/mpeg">
+</audio>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const musicRunner = document.getElementById("musicRunner");
+const musicSpace = document.getElementById("musicSpace");
+
+let currentGameMode = null;
+let score = 0, lives = 4, isGameOver = false;
+let items = [], stars = [], particles = [];
+let shakeTime = 0;
+
+const records = {
+    runner: localStorage.getItem('ozonHighscore_runner') || 0,
+    space: localStorage.getItem('ozonHighscore_space') || 0
+};
+
+const sprites = {
+    player: new Image(), bread: new Image(),
+    enemy: new Image(), cigs: new Image()
+};
+
+sprites.player.src = 'InShot_20260315_002246223.png';
+sprites.bread.src = 'InShot_20260315_002235078.png';
+sprites.enemy.src = 'InShot_20260315_002113104.png';
+sprites.cigs.src = 'InShot_20260315_002223501.png';
+
+const player = { x: 0, y: 0, w: 80, h: 100, speed: 10, dx: 0, dy: 0 };
+
+function startGame(mode) {
+    currentGameMode = mode;
+    score = 0; lives = 4; items = []; particles = [];
+    isGameOver = false;
+
+    musicRunner.pause();
+    musicRunner.currentTime = 0;
+    musicSpace.pause();
+    musicSpace.currentTime = 0;
+
+    if (mode === 'runner') {
+        player.x = canvas.width / 2 - 40;
+        player.y = canvas.height - 140;
+        document.body.style.backgroundImage = "url('1773522089236.png')";
+        musicRunner.play().catch(e => console.log("Music blocked"));
+    } else {
+        player.x = 80;
+        player.y = canvas.height / 2;
+        initStars();
+        document.body.style.backgroundImage = "none";
+        document.body.style.backgroundColor = "#020010";
+        musicSpace.play().catch(e => console.log("Music blocked"));
+    }
+
+    document.getElementById('main-menu').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+    spawnItem();
+    requestAnimationFrame(gameLoop);
+}
+
+function initStars() {
+    stars = [];
+    for(let i=0; i<100; i++) {
+        stars.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            s: Math.random() * 2.5,
+            speed: Math.random() * 2 + 0.5
+        });
+    }
+}
+
+function createParticles(x, y, color) {
+    for (let i = 0; i < 10; i++) {
+        particles.push({
+            x, y,
+            vx: (Math.random() - 0.5) * 8,
+            vy: (Math.random() - 0.5) * 8,
+            life: 1.0,
+            color
+        });
+    }
+}
+
+// Управление сенсорное и клавиатура
+window.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') player.dx = -player.speed;
+    if (e.key === 'ArrowRight') player.dx = player.speed;
+    if (e.key === 'ArrowUp') player.dy = -player.speed;
+    if (e.key === 'ArrowDown') player.dy = player.speed;
+});
+window.addEventListener('keyup', () => { player.dx = 0; player.dy = 0; });
+
+function spawnItem() {
+    if (isGameOver || !currentGameMode) return;
+    const type = Math.random() > 0.7 ? (Math.random() > 0.85 ? 'cigs' : 'enemy') : 'bread';
+    const it = { w: 60, h: 60, type, speed: 5 + (score/200) };
+    
+    if (currentGameMode === 'runner') {
+        it.x = Math.random() * (canvas.width - 60); it.y = -70;
+    } else {
+        it.x = canvas.width + 70; it.y = Math.random() * (canvas.height - 60);
+    }
+    items.push(it);
+    setTimeout(spawnItem, Math.max(150, 900 - score/2));
+}
+
+function update() {
+    player.x = Math.max(0, Math.min(canvas.width - player.w, player.x + player.dx));
+    player.y = Math.max(0, Math.min(canvas.height - player.h, player.y + player.dy));
+    
+    if (shakeTime > 0) shakeTime--;
+
+    if (currentGameMode === 'space') {
+        stars.forEach(s => {
+            s.x -= s.speed; 
+            if (s.x < 0) s.x = canvas.width;
+        });
+    }
+
+    for(let i = particles.length-1; i>=0; i--) {
+        particles[i].x += particles[i].vx;
+        particles[i].y += particles[i].vy;
+        particles[i].life -= 0.03;
+        if(particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        if (currentGameMode === 'runner') it.y += it.speed; else it.x -= it.speed;
+
+        if (it.x < player.x + player.w - 15 && it.x + it.w > player.x + 15 &&
+            it.y < player.y + player.h - 15 && it.y + it.h > player.y + 15) {
+            
+            if (it.type === 'bread') {
+                score += 10;
+                createParticles(it.x + 30, it.y + 30, '#FFD700');
+            } else if (it.type === 'enemy') {
+                lives--;
+                shakeTime = 10;
+                createParticles(player.x + 40, player.y + 50, '#ff0000');
+            } else if (it.type === 'cigs') {
+                if (lives < 4) lives++;
+                createParticles(it.x + 30, it.y + 30, '#00ff00');
+            }
+            items.splice(i, 1);
+            document.getElementById('score').innerText = score;
+            document.getElementById('lives').innerText = lives;
+            if (lives <= 0) gameOver();
+        }
+        if (it.y > canvas.height + 100 || it.x < -100) items.splice(i, 1);
+    }
+}
+
+function draw() {
+    ctx.save();
+    if (shakeTime > 0) ctx.translate(Math.random()*6-3, Math.random()*6-3);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (currentGameMode === 'space') {
+        ctx.fillStyle = "white";
+        stars.forEach(s => {
+            ctx.globalAlpha = s.speed / 2.5;
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.s, 0, Math.PI*2);
+            ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 3, 3);
+    });
+    ctx.globalAlpha = 1;
+
+    ctx.drawImage(sprites.player, player.x, player.y, player.w, player.h);
+    items.forEach(it => {
+        let img = sprites.bread;
+        if (it.type === 'enemy') img = sprites.enemy;
+        if (it.type === 'cigs') img = sprites.cigs;
+        ctx.drawImage(img, it.x, it.y, it.w, it.h);
+    });
+    ctx.restore();
+}
+
+function gameLoop() {
+    if (isGameOver) return;
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+function gameOver() {
+    isGameOver = true;
+    musicRunner.pause();
+    musicSpace.pause();
+    if (score > records[currentGameMode]) {
+        localStorage.setItem('ozonHighscore_' + currentGameMode, score);
+    }
+    document.getElementById('game-over').style.display = 'block';
+    document.getElementById('final-score').innerText = score;
+}
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+document.getElementById('record-runner').innerText = records.runner;
+document.getElementById('record-space').innerText = records.space;
+</script>
+</body>
+</html>
